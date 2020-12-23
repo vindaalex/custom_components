@@ -3,6 +3,7 @@ import logging
 from time import time
 from collections import deque, namedtuple
 
+_LOGGER = logging.getLogger(__name__)
 
 # Based on Arduino PID Library
 # See https://github.com/br3ttb/Arduino-PID-Library
@@ -80,10 +81,10 @@ class PIDArduino(object):
         self._last_output = max(self._last_output, self._out_min)
 
         # Log some debug info
-        self._logger.debug('P: {0}'.format(p))
-        self._logger.debug('I: {0}'.format(i))
-        self._logger.debug('D: {0}'.format(d))
-        self._logger.debug('output: {0}'.format(self._last_output))
+        _LOGGER.debug('P: {0}'.format(p))
+        _LOGGER.debug('I: {0}'.format(i))
+        _LOGGER.debug('D: {0}'.format(d))
+        _LOGGER.debug('output: {0}'.format(self._last_output))
 
         # Remember some variables for next time
         self._last_input = input_val
@@ -100,7 +101,7 @@ class PIDAutotune(object):
         out_step (float): The value by which the output will be
             increased/decreased when stepping up/down.
         sampletime (float): The interval between run() calls.
-        loockback (float): The reference period for local minima/maxima.
+        lookback (float): The reference period for local minima/maxima.
         out_min (float): Lower output limit.
         out_max (float): Upper output limit.
         noiseband (float): Determines by how much the input value must
@@ -109,7 +110,7 @@ class PIDAutotune(object):
     """
     PIDParams = namedtuple('PIDParams', ['Kp', 'Ki', 'Kd'])
 
-    PEAK_AMPLITUDE_TOLERANCE = 0.05
+    PEAK_AMPLITUDE_TOLERANCE = 1.03
     STATE_OFF = 'off'
     STATE_RELAY_STEP_UP = 'relay step up'
     STATE_RELAY_STEP_DOWN = 'relay step down'
@@ -176,18 +177,138 @@ class PIDAutotune(object):
         """Get a list of all available tuning rules."""
         return self._tuning_rules.keys()
 
-    def get_pid_parameters(self, tuning_rule='ziegler-nichols'):
+    def get_pid_parameters(self, tuning_rule='ziegler-nichols', use_tuning_rules=True, autotune_control_type='classic_pid'):
         """Get PID parameters.
 
         Args:
             tuning_rule (str): Sets the rule which should be used to calculate
                 the parameters.
+            use_tuning_rules (boolean): Set to true to use the tuning rules and 
+                false to use Ziegler–Nichols' method.
+            autotune_control_type (str): Sets the Ziegler Nichols control type
+                according to:
+                https://en.wikipedia.org/wiki/Ziegler%E2%80%93Nichols_method
+                Values: p, pi, pd, classic_pid, pessen_integral_rule, 
+                    some_overshoot, no_overshoot
+
         """
-        divisors = self._tuning_rules[tuning_rule]
-        kp = self._Ku / divisors[0]
-        ki = kp / (self._Pu / divisors[1])
-        kd = kp * (self._Pu / divisors[2])
-        return PIDAutotune.PIDParams(kp, ki, kd)
+        
+        # https://en.wikipedia.org/wiki/Ziegler%E2%80%93Nichols_method
+        _LOGGER.debug('Ultimate gain:')
+        _LOGGER.debug('Ku value: {0}'.format(self._Ku))
+        _LOGGER.debug('Oscilation period:')
+        _LOGGER.debug('Pu value: {0}'.format(self._Pu))
+        
+        _LOGGER.debug('Ziegler–Nichols P control type:')
+        kp = 0.5 * self._Ku
+        ki = kd = 0
+        _LOGGER.debug('Kp value: {0}'.format(kp))
+
+        _LOGGER.debug('Ziegler–Nichols PI control type:')
+        kp = 0.45 * self._Ku
+        ti = self._Pu / 1.2
+        ki = 0.54 * self._Ku / self._Pu
+        _LOGGER.debug('Kp value: {0}'.format(kp))
+        _LOGGER.debug('Ti value: {0}'.format(ti))
+        _LOGGER.debug('Ki value: {0}'.format(ki))
+
+        _LOGGER.debug('Ziegler–Nichols PD control type:')
+        kp = 0.8 * self._Ku
+        td = self._Pu / 8
+        kd = self._Ku * self._Pu / 10
+        _LOGGER.debug('Kp value: {0}'.format(kp))
+        _LOGGER.debug('Td value: {0}'.format(td))
+        _LOGGER.debug('Kd value: {0}'.format(kd))        
+
+        _LOGGER.debug('Ziegler–Nichols classic PID control type:')
+        kp = 0.6 * self._Ku
+        ti = self._Pu / 2
+        td = self._Pu / 8
+        ki = 1.2 * self._Ku / self._Pu
+        kd = 3 * self._Ku * self._Pu / 40
+        _LOGGER.debug('Kp value: {0}'.format(kp))
+        _LOGGER.debug('Ti value: {0}'.format(ti))
+        _LOGGER.debug('Td value: {0}'.format(td))
+        _LOGGER.debug('Ki value: {0}'.format(ki))
+        _LOGGER.debug('Kd value: {0}'.format(kd))
+
+        _LOGGER.debug('Ziegler–Nichols Pessen Integral Rule control type:')
+        kp = 7 * self._Ku / 10
+        ti = 2 * self._Pu / 5
+        td = 3 * self._Pu / 20
+        ki = 1.75 * self._Ku / self._Pu
+        kd = 21 * self._Ku * self._Pu / 200
+        _LOGGER.debug('Kp value: {0}'.format(kp))
+        _LOGGER.debug('Ti value: {0}'.format(ti))
+        _LOGGER.debug('Td value: {0}'.format(td))
+        _LOGGER.debug('Ki value: {0}'.format(ki))
+        _LOGGER.debug('Kd value: {0}'.format(kd))        
+
+        _LOGGER.debug('Ziegler–Nichols Some overshoot control type:')
+        kp = self._Ku / 3
+        ti = self._Pu / 2
+        td = self._Pu / 3
+        ki = 0.666 * self._Ku / self._Pu
+        kd = self._Ku * self._Pu / 9
+        _LOGGER.debug('Kp value: {0}'.format(kp))
+        _LOGGER.debug('Ti value: {0}'.format(ti))
+        _LOGGER.debug('Td value: {0}'.format(td))
+        _LOGGER.debug('Ki value: {0}'.format(ki))
+        _LOGGER.debug('Kd value: {0}'.format(kd)) 
+
+        _LOGGER.debug('Ziegler–Nichols No overshoot control type:')
+        kp = self._Ku / 5
+        ti = self._Pu / 2
+        td = self._Pu / 3
+        ki = (2/5) * self._Ku / self._Pu
+        kd = self._Ku * self._Pu / 15
+        _LOGGER.debug('Kp value: {0}'.format(kp))
+        _LOGGER.debug('Ti value: {0}'.format(ti))
+        _LOGGER.debug('Td value: {0}'.format(td))
+        _LOGGER.debug('Ki value: {0}'.format(ki))
+        _LOGGER.debug('Kd value: {0}'.format(kd))
+
+        if use_tuning_rules == True:
+            divisors = self._tuning_rules[tuning_rule]
+            kp = self._Ku / divisors[0]
+            ki = kp / (self._Pu / divisors[1])
+            kd = kp * (self._Pu / divisors[2])
+            return PIDAutotune.PIDParams(kp, ki, kd)
+        elif use_tuning_rules == False:
+            if autotune_control_type == 'p':
+                kp = 0.5*self._Ku
+                ki = kd = 0
+                return PIDAutotune.PIDParams(kp, ki, kd)
+            elif autotune_control_type == 'pi':
+                kp = 0.45 * self._Ku
+                ki = 0.54 * self._Ku / self._Pu
+                kd = 0             
+                return PIDAutotune.PIDParams(kp, ki, kd)
+            elif autotune_control_type == 'pd':
+                kp = 0.8 * self._Ku
+                ki = 0
+                kd = self._Ku * self._Pu / 10           
+                return PIDAutotune.PIDParams(kp, ki, kd)
+            elif autotune_control_type == 'classic_pid':
+                kp = 0.6 * self._Ku
+                ki = 1.2 * self._Ku / self._Pu
+                kd = 3 * self._Ku * self._Pu / 40         
+                return PIDAutotune.PIDParams(kp, ki, kd)
+            elif autotune_control_type == 'pessen_integral_rule':
+                kp = 7 * self._Ku / 10
+                ki = 1.75 * self._Ku / self._Pu
+                kd = 21 * self._Ku * self._Pu / 200   
+                return PIDAutotune.PIDParams(kp, ki, kd)
+            elif autotune_control_type == 'some_overshoot':
+                kp = self._Ku / 3
+                ki = 0.666 * self._Ku / self._Pu
+                kd = self._Ku * self._Pu / 9  
+                return PIDAutotune.PIDParams(kp, ki, kd)
+            elif autotune_control_type == 'no_overshoot':
+                kp = self._Ku / 5
+                ki = (2/5) * self._Ku / self._Pu
+                kd = self._Ku * self._Pu / 15
+                return PIDAutotune.PIDParams(kp, ki, kd)
 
     def run(self, input_val):
         """To autotune a system, this method must be called periodically.
@@ -213,13 +334,13 @@ class PIDAutotune(object):
         if (self._state == PIDAutotune.STATE_RELAY_STEP_UP
                 and input_val > self._setpoint + self._noiseband):
             self._state = PIDAutotune.STATE_RELAY_STEP_DOWN
-            self._logger.debug('switched state: {0}'.format(self._state))
-            self._logger.debug('input: {0}'.format(input_val))
+            _LOGGER.debug('switched state: {0}'.format(self._state))
+            _LOGGER.debug('input: {0}'.format(input_val))
         elif (self._state == PIDAutotune.STATE_RELAY_STEP_DOWN
                 and input_val < self._setpoint - self._noiseband):
             self._state = PIDAutotune.STATE_RELAY_STEP_UP
-            self._logger.debug('switched state: {0}'.format(self._state))
-            self._logger.debug('input: {0}'.format(input_val))
+            _LOGGER.debug('switched state: {0}'.format(self._state))
+            _LOGGER.debug('input: {0}'.format(input_val))
 
         # set output
         if (self._state == PIDAutotune.STATE_RELAY_STEP_UP):
@@ -265,8 +386,8 @@ class PIDAutotune(object):
             self._peak_count += 1
             self._peaks.append(input_val)
             self._peak_timestamps.append(now)
-            self._logger.debug('found peak: {0}'.format(input_val))
-            self._logger.debug('peak count: {0}'.format(self._peak_count))
+            _LOGGER.debug('found peak: {0}'.format(input_val))
+            _LOGGER.debug('peak count: {0}'.format(self._peak_count))
 
         # check for convergence of induced oscillation
         # convergence of amplitude assessed on last 4 peaks (1.5 cycles)
@@ -280,14 +401,22 @@ class PIDAutotune(object):
                 abs_max = max(self._peaks[i], abs_max)
                 abs_min = min(self._peaks[i], abs_min)
 
-            self._induced_amplitude /= 6.0
+
+            self._induced_amplitude /= 3.0
+
+            if (self._peak_count % 2) != 0:
+                abs_max = max(self._peaks[0], self._peaks[2])
+                abs_min = min(self._peaks[1], self._peaks[3])
+            else:
+                abs_max = max(self._peaks[1], self._peaks[3])
+                abs_min = min(self._peaks[0], self._peaks[2])            
 
             # check convergence criterion for amplitude of induced oscillation
             amplitude_dev = ((0.5 * (abs_max - abs_min) - self._induced_amplitude)
                              / self._induced_amplitude)
 
-            self._logger.debug('amplitude: {0}'.format(self._induced_amplitude))
-            self._logger.debug('amplitude deviation: {0}'.format(amplitude_dev))
+            _LOGGER.debug('amplitude: {0}'.format(self._induced_amplitude))
+            _LOGGER.debug('amplitude deviation: {0}'.format(amplitude_dev))
 
             if amplitude_dev < PIDAutotune.PEAK_AMPLITUDE_TOLERANCE:
                 self._state = PIDAutotune.STATE_SUCCEEDED
