@@ -1,7 +1,7 @@
 """Adds support for smart (PID) thermostat units.
 For more details about this platform, please refer to the documentation at
 https://github.com/fabiannydegger/custom_components/"""
-
+#avdz
 import asyncio
 import logging
 import time
@@ -65,6 +65,11 @@ CONF_NOISEBAND = 'noiseband'
 CONF_HEAT_METER = 'heat_meter'
 CONF_AUTOTUNE_LOOKBACK = 'autotune_lookback'
 CONF_AUTOTUNE_CONTROL_TYPE = 'autotune_control_type'
+
+#valve control
+SERVICE_SET_VALUE = 'set_value'
+ATTR_VALUE = 'value'
+PLATFORM_INPUT_NUMBER = 'input_number'
 
 SUPPORT_FLAGS = SUPPORT_TARGET_TEMPERATURE
 
@@ -149,6 +154,7 @@ class SmartThermostat(ClimateEntity, RestoreEntity):
                  noiseband, heat_meter_entity_id, autotune_lookback,
                  autotune_control_type):
         """Initialize the thermostat."""
+        _LOGGER.info("Initializing smart thermostat")
         self._name = name
         self.heater_entity_id = heater_entity_id
         self.sensor_entity_id = sensor_entity_id
@@ -301,7 +307,7 @@ class SmartThermostat(ClimateEntity, RestoreEntity):
         if self._hvac_mode == HVAC_MODE_OFF:
             if self.heat_meter_entity_id != 'none':                
                 meter_attributes = {
-                    'friendly_name': 'Potencia media calefacción',
+                    'friendly_name': 'Valve position',
                     'icon': 'mdi:radiator',
                     'unit_of_measurement': '%'
                 }
@@ -477,6 +483,11 @@ class SmartThermostat(ClimateEntity, RestoreEntity):
         data = {ATTR_ENTITY_ID: self.heater_entity_id}
         await self.hass.services.async_call(HA_DOMAIN, SERVICE_TURN_OFF, data)
 
+    async def _async_set_valve(self):
+        """set valve opening percentage."""
+        data = {ATTR_ENTITY_ID: self.heater_entity_id, ATTR_VALUE: self.control_output }
+        await self.hass.services.async_call(PLATFORM_INPUT_NUMBER, SERVICE_SET_VALUE, data )
+
     async def async_set_preset_mode(self, preset_mode: str):
         """Set new preset mode.
         This method must be run in the event loop and returns a coroutine.
@@ -537,14 +548,15 @@ class SmartThermostat(ClimateEntity, RestoreEntity):
                     self.time_changed = time.time()
             if self.heat_meter_entity_id != 'none':                
                 meter_attributes = {
-                    'friendly_name': 'Potencia media calefacción',
+                    'friendly_name': 'Valve position',
                     'icon': 'mdi:radiator',
                     'unit_of_measurement': '%'
                 }
                 self.hass.states.async_set(self.heat_meter_entity_id, round(self.control_output, 1), meter_attributes)            
         else:
             _LOGGER.info("Change state of heater %s to %s", self.heater_entity_id, self.control_output)
-            self.hass.states.async_set(self.heater_entity_id, self.control_output)
+            # self.hass.states.async_set(self.heater_entity_id, self.control_output)
+            await self._async_set_valve()
 
     async def pwm_switch(self, time_on, time_off, time_passed):
         """turn off and on the heater proportionally to controlvalue."""
